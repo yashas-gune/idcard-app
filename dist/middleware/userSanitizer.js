@@ -1,0 +1,54 @@
+"use strict";
+Object.defineProperty(exports, "__esModule", { value: true });
+exports.strictUserSanitizer = exports.sanitizeUserData = void 0;
+/**
+ * Middleware to ensure user data is consistent and has default values
+ * Runs on every request before reaching the route handler
+ */
+const sanitizeUserData = (req, res, next) => {
+    if (req.user) {
+        // Set defaults for missing required fields
+        const user = req.user;
+        // Ensure department is never undefined/null
+        if (!user.department && user.role === 'staff') {
+            user.department = 'General';
+            console.log(`🛠 Sanitized user ${user.id}: set department to "General"`);
+        }
+        // Ensure organization_id is set for non-owner users
+        if (!user.organization_id && user.role !== 'owner') {
+            console.warn(`⚠️ User ${user.id} (${user.role}) has no organization_id`);
+            // You might want to handle this differently based on your business logic
+        }
+        // Log sanitization for debugging
+        if (req.user !== user) {
+            console.log('🔧 User data sanitized:', {
+                id: user.id,
+                role: user.role,
+                department: user.department
+            });
+        }
+    }
+    next();
+};
+exports.sanitizeUserData = sanitizeUserData;
+/**
+ * More aggressive sanitizer that ensures ALL users have consistent data
+ */
+const strictUserSanitizer = (req, res, next) => {
+    if (req.user) {
+        const defaults = {
+            department: 'General',
+            // Add other defaults as needed based on role
+        };
+        Object.keys(defaults).forEach(key => {
+            const currentValue = req.user[key];
+            const defaultValue = defaults[key];
+            if (currentValue === undefined || currentValue === null || currentValue === '') {
+                req.user[key] = defaultValue;
+                console.log(`🛠 Strict sanitizer: set ${key} to "${defaultValue}" for user ${req.user.id}`);
+            }
+        });
+    }
+    next();
+};
+exports.strictUserSanitizer = strictUserSanitizer;
