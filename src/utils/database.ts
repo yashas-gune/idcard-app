@@ -13,9 +13,12 @@ const dbConfig = {
   connectionLimit: 10,
   queueLimit: 0,
   charset: "utf8mb4",
+  ssl: {
+    rejectUnauthorized: true, // ensures Railway SSL connection
+  },
 };
 
-console.log("🔧 cPanel Database config:", {
+console.log("🔧 Railway Database config:", {
   host: dbConfig.host,
   port: dbConfig.port,
   user: dbConfig.user,
@@ -28,11 +31,11 @@ const pool = mysql.createPool(dbConfig);
 pool
   .getConnection()
   .then((connection) => {
-    console.log("✅ Connected to cPanel Database successfully");
+    console.log("✅ Connected to Railway Database successfully");
     connection.release();
   })
   .catch((error) => {
-    console.error("❌ cPanel Database connection failed:", error.message);
+    console.error("❌ Railway Database connection failed:", error.message);
   });
 
 export default pool;

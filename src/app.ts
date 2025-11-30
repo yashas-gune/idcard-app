@@ -9,6 +9,7 @@ import templateRoutes from './routes/templates';
 import idCardRoutes from './routes/idCards';
 import uploadRoutes from './routes/upload';
 import path from 'path';
+import pool from './utils/database';
 
 dotenv.config();
 
@@ -38,6 +39,17 @@ app.get('/api/health', (req, res) => {
     timestamp: new Date().toISOString()
   });
 });
+app.get('/api/test-db', async (req, res) => {
+  try {
+    const [tables] = await pool.query('SHOW TABLES;');
+    res.json({ tables });
+  } catch (err: any) {
+    console.error(err);
+    res.status(500).json({ error: err.message });
+  }
+});
+
+
 
 app.listen(PORT, () => {
   console.log(`🚀 Server running on port ${PORT}`);
