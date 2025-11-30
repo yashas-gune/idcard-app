@@ -14,7 +14,7 @@ const dbConfig = {
   queueLimit: 0,
   charset: "utf8mb4",
   ssl: {
-    rejectUnauthorized: true, // ensures Railway SSL connection
+    rejectUnauthorized: false, // <--- important for Railway MySQL
   },
 };
 
