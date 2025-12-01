@@ -17,104 +17,60 @@ const app = express();
 // ⚡ Trust Railway proxy for HTTPS
 app.set('trust proxy', true);
 
-// 🔥 CRITICAL: CLOUDFLARE + RAILWAY OPTIMIZED CORS
-const corsOptions = {
-  origin: (origin: string | undefined, callback: (err: Error | null, allow?: boolean) => void) => {
-    // Allow all origins in development, specific in production
-    const allowedOrigins = [
-      'http://localhost:8081',
-      'http://localhost:19006',
-      'http://localhost:3000',
-      'exp://',
-      'https://perfectinfosoft.com',
-    ];
-    
-    // Allow requests with no origin (like mobile apps, curl, postman)
-    if (!origin) return callback(null, true);
-    
-    if (process.env.NODE_ENV === 'development' || allowedOrigins.some(o => origin.includes(o))) {
-      callback(null, true);
-    } else {
-      console.warn(`Blocked CORS request from: ${origin}`);
-      callback(new Error('Not allowed by CORS'));
-    }
-  },
+// 🔥 CRITICAL FIX: Enhanced CORS configuration for React Native
+app.use(cors({
+  origin: '*', // Explicitly allow all origins (for development)
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
   allowedHeaders: [
-    'Content-Type',
-    'Authorization',
-    'Accept',
-    'Origin',
+    'Content-Type', 
+    'Authorization', 
+    'Accept', 
+    'Origin', 
     'X-Requested-With',
     'X-Auth-Token',
-    'Access-Control-Allow-Origin',
-    'Access-Control-Request-Headers',
-    'Access-Control-Request-Method'
+    'Access-Control-Allow-Origin'
   ],
-  exposedHeaders: [
-    'Content-Length',
-    'Authorization',
-    'Access-Control-Allow-Origin',
-    'Access-Control-Allow-Credentials'
-  ],
+  exposedHeaders: ['Content-Length', 'Authorization'],
   credentials: true,
-  maxAge: 86400,
+  maxAge: 86400, // 24 hours
   preflightContinue: false,
   optionsSuccessStatus: 204
-};
+}));
 
-// Apply CORS middleware
-app.use(cors(corsOptions));
+// 🔥 FIXED: Handle preflight OPTIONS requests - Use valid route pattern
+app.options('/*', cors()); // ✅ Add slash before asterisk
 
-// 🔥 CLOUDFLARE CACHE CONTROL HEADERS (Prevent Cloudflare from caching API)
+// 🔥 CLOUDFLARE CACHE CONTROL HEADERS
 app.use((req, res, next) => {
   // Prevent Cloudflare from caching API responses
-  res.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.header('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate');
   res.header('Pragma', 'no-cache');
   res.header('Expires', '0');
   res.header('Surrogate-Control', 'no-store');
   
-  // Cloudflare-specific headers
+  // Cloudflare-specific cache bypass
   res.header('CF-Cache-Status', 'BYPASS');
-  res.header('CDN-Cache-Control', 'no-cache, no-store');
-  
-  // Security headers
-  res.header('X-Content-Type-Options', 'nosniff');
-  res.header('X-Frame-Options', 'DENY');
-  res.header('X-XSS-Protection', '1; mode=block');
+  res.header('CDN-Cache-Control', 'no-cache');
   
   next();
 });
 
-// 🔥 Handle preflight OPTIONS requests explicitly
-app.options('*', (req, res) => {
-  // Set CORS headers for preflight
-  const origin = req.headers.origin;
-  if (origin) {
-    res.header('Access-Control-Allow-Origin', origin);
-  } else {
+// Manual preflight handler (alternative - remove if using app.options above)
+app.use((req, res, next) => {
+  if (req.method === 'OPTIONS') {
     res.header('Access-Control-Allow-Origin', '*');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
+    res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin, X-Requested-With');
+    res.header('Access-Control-Max-Age', '86400');
+    return res.status(204).end();
   }
-  res.header('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, PATCH, OPTIONS');
-  res.header('Access-Control-Allow-Headers', 'Content-Type, Authorization, Accept, Origin, X-Requested-With, X-Auth-Token');
-  res.header('Access-Control-Allow-Credentials', 'true');
-  res.header('Access-Control-Max-Age', '86400');
-  
-  return res.status(204).end();
+  next();
 });
 
 // Middleware
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use('/uploads', express.static(path.join(__dirname, '../uploads')));
-
-// 🔥 DEBUG MIDDLEWARE (Remove in production)
-app.use((req, res, next) => {
-  console.log(`[${new Date().toISOString()}] ${req.method} ${req.originalUrl}`);
-  console.log('Origin:', req.headers.origin);
-  console.log('User-Agent:', req.headers['user-agent']);
-  next();
-});
 
 // Routes
 app.use('/api/auth', authRoutes);
@@ -125,30 +81,12 @@ app.use('/api/templates', templateRoutes);
 app.use('/api/id-cards', idCardRoutes);
 app.use('/api/upload', uploadRoutes);
 
-// Health check with CORS test
+// Health check
 app.get('/api/health', (req, res) => {
   res.json({
     status: 'OK',
     message: 'ID Card Management API is running',
-    timestamp: new Date().toISOString(),
-    cors: {
-      origin: req.headers.origin || 'none',
-      allowed: true
-    }
-  });
-});
-
-// CORS test endpoint
-app.get('/api/cors-test', (req, res) => {
-  res.json({
-    success: true,
-    message: 'CORS test successful',
-    yourOrigin: req.headers.origin || 'No origin header',
-    serverTime: new Date().toISOString(),
-    headers: {
-      'access-control-allow-origin': res.getHeader('access-control-allow-origin'),
-      'cache-control': res.getHeader('cache-control')
-    }
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -156,8 +94,6 @@ app.get('/api/cors-test', (req, res) => {
 app.get('/api', (req, res) => {
   res.json({
     message: 'ID Card Management API',
-    version: '1.0.0',
-    environment: process.env.NODE_ENV || 'development',
     endpoints: {
       auth: '/api/auth',
       users: '/api/users',
@@ -166,40 +102,27 @@ app.get('/api', (req, res) => {
       templates: '/api/templates',
       idCards: '/api/id-cards',
       upload: '/api/upload',
-      health: '/api/health',
-      corsTest: '/api/cors-test'
+      health: '/api/health'
     }
   });
 });
 
-// Catch-all route for API 404
+// Catch-all route for API 404 - Use valid pattern
 app.use('/api/*', (req, res) => {
   res.status(404).json({
     success: false,
     error: 'API endpoint not found',
-    path: req.originalUrl,
-    method: req.method,
-    timestamp: new Date().toISOString()
+    path: req.originalUrl
   });
 });
 
 // Global error handler
 app.use((err: Error, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  console.error('🚨 Global error:', {
-    message: err.message,
-    stack: err.stack,
-    url: req.originalUrl,
-    method: req.method,
-    timestamp: new Date().toISOString()
-  });
-  
+  console.error('Global error:', err);
   res.status(500).json({
     success: false,
-    error: process.env.NODE_ENV === 'production' 
-      ? 'Internal server error' 
-      : err.message,
-    timestamp: new Date().toISOString(),
-    path: req.originalUrl
+    error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message,
+    timestamp: new Date().toISOString()
   });
 });
 
@@ -208,7 +131,5 @@ const PORT = process.env.PORT ? Number(process.env.PORT) : 3000;
 
 app.listen(PORT, '0.0.0.0', () => {
   console.log(`🚀 Server running on port ${PORT}`);
-  console.log(`🌍 CORS enabled`);
-  console.log(`🔧 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`📡 Direct Railway URL: ${process.env.RAILWAY_STATIC_URL || 'Not set'}`);
+  console.log(`🌍 CORS enabled for all origins`);
 });
