@@ -195,8 +195,7 @@ router.get('/:id', authenticateToken, async (req: AuthRequest, res: Response) =>
     const orgId = req.params.id;
 
     // Check access permissions
-    if (req.user.role === 'admin' && req.user.organization_id != orgId) {
-      return res.status(403).json({ error: 'Access denied' });
+    if (req.user.role === 'admin' && req.user.organization_id !== parseInt(orgId)) {      return res.status(403).json({ error: 'Access denied' });
     }
 
     if (req.user.role === 'agent') {

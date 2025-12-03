@@ -55,25 +55,42 @@ const ftpConfig = {
 };
 
 // Helper function to ensure directory exists on FTP
+// Replace the ensureFtpDirectory function:
 const ensureFtpDirectory = async (client: ftp.Client, dirPath: string): Promise<void> => {
-  try {
-    await client.cd('/');
-    const parts = dirPath.split('/').filter(p => p);
-    
-    for (const part of parts) {
-      try {
-        await client.cd(part);
-      } catch (error) {
-        await client.mkdir(part);
-        await client.cd(part);
+    try {
+      // Go to root
+      await client.cd('/');
+      
+      const parts = dirPath.split('/').filter(p => p);
+      
+      for (const part of parts) {
+        try {
+          // Try to change to directory
+          await client.cd(part);
+        } catch (error) {
+          // If directory doesn't exist, create it
+          try {
+            await client.send('MKD ' + part);
+          } catch (mkdirError) {
+            // Directory might already exist or other error
+            console.log(`Directory ${part} might already exist`);
+          }
+          try {
+            await client.cd(part);
+          } catch (cdError) {
+            // Try alternative approach
+            await client.send('CWD ' + part);
+          }
+        }
       }
+      
+      // Return to root
+      await client.cd('/');
+    } catch (error) {
+      console.error('Error ensuring FTP directory:', error);
+      throw error;
     }
-    await client.cd('/');
-  } catch (error) {
-    console.error('Error ensuring FTP directory:', error);
-    throw error;
-  }
-};
+  };
 
 // Upload endpoint - using typed AuthRequest
 router.post('/upload', authenticateToken, upload.single('file'), async (req: AuthRequest, res: Response) => {
