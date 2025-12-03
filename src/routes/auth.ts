@@ -46,7 +46,8 @@ router.post('/login', async (req: Request, res: Response) => {
         id: user.id, 
         mobile: user.mobile, 
         role: user.role,
-        organization_id: user.organization_id 
+        organization_id: user.organization_id,
+        department: user.department || 'General'
       },
       process.env.JWT_SECRET!,
       { expiresIn: '24h' }

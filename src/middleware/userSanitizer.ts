@@ -1,5 +1,5 @@
 import { Request, Response, NextFunction } from 'express';
-import { AuthRequest } from './auth';
+import { AuthRequest, JWTUser } from './auth';
 
 /**
  * Middleware to ensure user data is consistent and has default values
@@ -12,7 +12,8 @@ export const sanitizeUserData = (req: AuthRequest, res: Response, next: NextFunc
     
     // Ensure department is never undefined/null
     if (!user.department && user.role === 'staff') {
-      user.department = 'General';
+      // Cast to any to bypass TypeScript strictness or extend interface
+      (user as any).department = 'General';
       console.log(`🛠 Sanitized user ${user.id}: set department to "General"`);
     }
     
@@ -23,13 +24,11 @@ export const sanitizeUserData = (req: AuthRequest, res: Response, next: NextFunc
     }
     
     // Log sanitization for debugging
-    if (req.user !== user) {
-      console.log('🔧 User data sanitized:', { 
-        id: user.id, 
-        role: user.role, 
-        department: user.department 
-      });
-    }
+    console.log('🔧 User data sanitized:', { 
+      id: user.id, 
+      role: user.role, 
+      department: user.department 
+    });
   }
   next();
 };
@@ -39,18 +38,18 @@ export const sanitizeUserData = (req: AuthRequest, res: Response, next: NextFunc
  */
 export const strictUserSanitizer = (req: AuthRequest, res: Response, next: NextFunction) => {
   if (req.user) {
-    const defaults = {
+    const defaults: Record<string, any> = {
       department: 'General',
       // Add other defaults as needed based on role
     };
     
     Object.keys(defaults).forEach(key => {
-      const currentValue = req.user[key];
+      const currentValue = (req.user as any)[key];
       const defaultValue = defaults[key];
       
       if (currentValue === undefined || currentValue === null || currentValue === '') {
-        req.user[key] = defaultValue;
-        console.log(`🛠 Strict sanitizer: set ${key} to "${defaultValue}" for user ${req.user.id}`);
+        (req.user as any)[key] = defaultValue;
+        console.log(`🛠 Strict sanitizer: set ${key} to "${defaultValue}" for user ${req.user!.id}`);
       }
     });
   }

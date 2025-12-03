@@ -7,6 +7,7 @@ export interface JWTUser {
   mobile: string;
   role: 'owner' | 'agent' | 'admin' | 'staff';
   organization_id?: number | null;
+  department?: string; // Add this property
   iat?: number;
   exp?: number;
 }
