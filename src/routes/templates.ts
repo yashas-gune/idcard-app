@@ -25,6 +25,30 @@ const safeParse = (value: any) => {
   }
 };
 
+/** Helper to clean field for validation (remove front:/back: prefixes) */
+const cleanFieldForValidation = (field: string): string => {
+  return field.replace(/^(front:|back:)/, '');
+};
+
+/** Helper to parse fields into front/back arrays */
+const parseFieldsToSides = (fields: string[]) => {
+  const frontFields: string[] = [];
+  const backFields: string[] = [];
+  
+  fields.forEach((field: string) => {
+    if (field.startsWith('back:')) {
+      backFields.push(field.replace('back:', ''));
+    } else if (field.startsWith('front:')) {
+      frontFields.push(field.replace('front:', ''));
+    } else {
+      // Legacy: no prefix means front
+      frontFields.push(field);
+    }
+  });
+  
+  return { frontFields, backFields };
+};
+
 /**
  * ================================
  * CREATE TEMPLATE
@@ -61,7 +85,15 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req: AuthRequ
       return badRequest(res, 'fields must be a non-empty array');
     }
 
-    const invalidFields = fields.filter((f: any) => typeof f !== 'string' || !AVAILABLE_FIELDS.includes(f));
+    // UPDATED VALIDATION: Strip prefixes before checking
+    const invalidFields = fields.filter((f: any) => {
+      if (typeof f !== 'string') return true;
+      
+      // Remove front: or back: prefixes before validation
+      const cleanField = cleanFieldForValidation(f);
+      return !AVAILABLE_FIELDS.includes(cleanField);
+    });
+
     if (invalidFields.length > 0) {
       return badRequest(res, `Invalid fields: ${invalidFields.join(', ')}`);
     }
@@ -87,12 +119,28 @@ router.post('/', authenticateToken, requireRole(['admin']), async (req: AuthRequ
         backgroundColor,
         textColor,
         backgroundImageUrl || null,
-        JSON.stringify(fields) // Store safely
+        JSON.stringify(fields) // Store with prefixes
       ]
     );
 
     const templateId = (result as any).insertId;
-    res.status(201).json({ success: true, message: 'Template created successfully', templateId });
+    res.status(201).json({ 
+      success: true, 
+      message: 'Template created successfully', 
+      templateId,
+      data: {
+        id: templateId,
+        name: name.trim(),
+        card_size: cardSize,
+        orientation,
+        is_double_sided: isDoubleSided ? 1 : 0,
+        background_color: backgroundColor,
+        text_color: textColor,
+        background_image_url: backgroundImageUrl || null,
+        fields,
+        ...parseFieldsToSides(fields) // Include parsed front/back for convenience
+      }
+    });
 
   } catch (error: any) {
     console.error('🔥 MYSQL ERROR (create template):', error?.sqlMessage ?? error?.message ?? error);
@@ -125,12 +173,25 @@ router.get('/', authenticateToken, requireRole(['admin', 'staff']), async (req: 
       const parsedFields = safeParse(t.fields);
       if (!parsedFields || !Array.isArray(parsedFields)) {
         console.error("Invalid JSON in DB for template:", t.id);
-        return { ...t, fields: [] };
+        return { ...t, fields: [], front_fields: [], back_fields: [] };
       }
-      return { ...t, fields: parsedFields };
+      
+      // Parse fields into front/back for easier frontend use
+      const { frontFields, backFields } = parseFieldsToSides(parsedFields);
+      
+      return { 
+        ...t, 
+        fields: parsedFields,
+        front_fields: frontFields,
+        back_fields: backFields
+      };
     });
 
-    res.json({ success: true, templates: parsed });
+    res.json({ 
+      success: true, 
+      data: parsed, // Changed from "templates" to "data" to match frontend
+      count: parsed.length 
+    });
 
   } catch (error) {
     console.error('Get templates error:', error);
@@ -158,9 +219,20 @@ router.get('/:id', authenticateToken, requireRole(['admin', 'staff']), async (re
     }
 
     const template = (templates as any[])[0];
-    const parsedFields = safeParse(template.fields);
+    const parsedFields = safeParse(template.fields) ?? [];
+    
+    // Parse fields into front/back for easier frontend use
+    const { frontFields, backFields } = parseFieldsToSides(parsedFields);
 
-    res.json({ success: true, template: { ...template, fields: parsedFields ?? [] } });
+    res.json({ 
+      success: true, 
+      data: { 
+        ...template, 
+        fields: parsedFields,
+        front_fields: frontFields,
+        back_fields: backFields
+      }
+    });
 
   } catch (error) {
     console.error('Get template error:', error);
@@ -197,6 +269,21 @@ router.put('/:id', authenticateToken, requireRole(['admin']), async (req: AuthRe
       return badRequest(res, 'fields must be an array');
     }
 
+    // UPDATED VALIDATION: Strip prefixes before checking
+    if (fields && fields.length > 0) {
+      const invalidFields = fields.filter((f: any) => {
+        if (typeof f !== 'string') return true;
+        
+        // Remove front: or back: prefixes before validation
+        const cleanField = cleanFieldForValidation(f);
+        return !AVAILABLE_FIELDS.includes(cleanField);
+      });
+
+      if (invalidFields.length > 0) {
+        return badRequest(res, `Invalid fields: ${invalidFields.join(', ')}`);
+      }
+    }
+
     await pool.execute(
       `UPDATE templates
        SET name = ?, card_size = ?, orientation = ?, is_double_sided = ?,
@@ -216,7 +303,26 @@ router.put('/:id', authenticateToken, requireRole(['admin']), async (req: AuthRe
       ]
     );
 
-    res.json({ success: true, message: 'Template updated successfully' });
+    // Get updated template to return
+    const [updatedTemplates] = await pool.execute(
+      `SELECT * FROM templates WHERE id = ? AND organization_id = ?`,
+      [templateId, organizationId]
+    );
+
+    const updatedTemplate = (updatedTemplates as any[])[0];
+    const parsedFields = safeParse(updatedTemplate.fields) ?? [];
+    const { frontFields, backFields } = parseFieldsToSides(parsedFields);
+
+    res.json({ 
+      success: true, 
+      message: 'Template updated successfully',
+      data: {
+        ...updatedTemplate,
+        fields: parsedFields,
+        front_fields: frontFields,
+        back_fields: backFields
+      }
+    });
 
   } catch (error) {
     console.error('Update template error:', error);
@@ -249,7 +355,19 @@ router.delete('/:id', authenticateToken, requireRole(['admin']), async (req: Aut
 
 /** Available fields */
 router.get('/options/available-fields', authenticateToken, (req: AuthRequest, res: Response) => {
-  res.json({ fields: AVAILABLE_FIELDS });
+  res.json({ 
+    success: true,
+    data: AVAILABLE_FIELDS.map(field => ({
+      id: field,
+      label: field.split('_').map(word => 
+        word.charAt(0).toUpperCase() + word.slice(1)
+      ).join(' '),
+      type: field === 'photo' ? 'image' : 
+            field === 'dob' || field === 'issue_date' || field === 'expiry_date' ? 'date' :
+            field === 'mobile' ? 'phone' :
+            field === 'email' ? 'email' : 'text'
+    }))
+  });
 });
 
 export default router;
